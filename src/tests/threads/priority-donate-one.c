@@ -38,6 +38,11 @@ test_priority_donate_one (void)
   msg ("This thread should have priority %d.  Actual priority: %d.",
        PRI_DEFAULT + 2, thread_get_priority ());
   lock_release (&lock);
+  //print read_list
+  //print_ready_list();
+  //thread_yield ();
+  //msg ("This thread should have priority %d.  Actual priority: %d.",
+  //     PRI_DEFAULT, thread_get_priority ());
   msg ("acquire2, acquire1 must already have finished, in that order.");
   msg ("This should be the last line before finishing this test.");
 }
@@ -49,6 +54,8 @@ acquire1_thread_func (void *lock_)
 
   lock_acquire (lock);
   msg ("acquire1: got the lock");
+  //ASSERT(lock);
+  //ASSERT(lock_held_by_current_thread(lock));
   lock_release (lock);
   msg ("acquire1: done");
 }
