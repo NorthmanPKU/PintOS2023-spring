@@ -4,6 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 
 /** Number of page faults processed. */
 static long long page_fault_cnt;
@@ -81,6 +82,7 @@ kill (struct intr_frame *f)
      
   /* The interrupt frame's code segment value tells us where the
      exception originated. */
+     
   switch (f->cs)
     {
     case SEL_UCSEG:
@@ -89,6 +91,7 @@ kill (struct intr_frame *f)
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
+      thread_current()->exit_code = -1;
       thread_exit (); 
 
     case SEL_KCSEG:
@@ -122,6 +125,12 @@ kill (struct intr_frame *f)
 static void
 page_fault (struct intr_frame *f) 
 {
+   // if (f->error_code & PF_P == 0) //page_fault_triggered_by_a_bad_reference_from_a_system_call
+   // {
+   //    f->eip = (void (*) (void)) f->eax;
+   //    f->eax = -1;
+   //    return;
+   // }
   bool not_present;  /**< True: not-present page, false: writing r/o page. */
   bool write;        /**< True: access was write, false: access was read. */
   bool user;         /**< True: access by user, false: access by kernel. */
@@ -148,14 +157,95 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+   if (!user) {
+    f->eip = (void (*) (void)) f->eax;
+    f->eax = -1;
+    return;
+  }      
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
+//printf("Here I'm in page_fault(), user = %d.\n", user);
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
+    
   kill (f);
+}
+
+
+/*Implementation in Lab 2*/
+/*Provioded codes*/
+
+/* Reads a byte at user virtual address UADDR.
+   UADDR must be below PHYS_BASE.
+   Returns the byte value if successful, -1 if a segfault
+   occurred. */
+static int
+get_user (const uint8_t *uaddr)
+{
+  int result;
+  asm ("movl $1f, %0; movzbl %1, %0; 1:"
+       : "=&a" (result) : "m" (*uaddr));
+  return result;
+}
+
+/* Writes BYTE to user address UDST.
+   UDST must be below PHYS_BASE.
+   Returns true if successful, false if a segfault occurred. */
+static bool
+put_user (uint8_t *udst, uint8_t byte)
+{
+  int error_code;
+  asm ("movl $1f, %0; movb %b2, %1; 1:"
+       : "=&a" (error_code), "=m" (*udst) : "q" (byte));
+  return error_code != -1;
+}
+
+/*My Implementation*/
+
+void set_and_exit(){
+   thread_current()->exit_code = -1;
+   thread_exit();
+}
+
+/*2 for str, 1 for write and 0 for read*/
+void *pointer_checker(const void *vaddr, size_t size, int type){
+   //Check whether the addr is below PHYS_BASE
+   if (!is_user_vaddr(vaddr)){
+      set_and_exit();
+   }
+
+   if(type == 0)
+      for (size_t i = 0; i < size; i++){
+         if (get_user((uint8_t*)vaddr + i) == -1){
+            set_and_exit();
+         }
+      }
+   else if(type == 1)
+      for (size_t i = 0; i < size; i++){
+         if (put_user((uint8_t*)vaddr + i, 0) == false){
+            set_and_exit();
+         }
+      }
+   else if(type == 2){
+      uint8_t *p_str = (uint8_t*)vaddr;
+      while(1){
+         int result = get_user(p_str);
+         if (result == -1){
+            set_and_exit();
+         }
+         else if (result == 0){
+            return p_str;
+         }
+         p_str++;
+      }
+
+   }
+
+   void *ptr = vaddr;
+   return ptr;
 }
 

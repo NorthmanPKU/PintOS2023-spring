@@ -20,8 +20,8 @@ void sema_self_test(void);
 struct lock {
     struct list_elem elem; /**< List element. */
     int max_priority;      /**< Max priority of the threads wanting the lock. */
-    int have_thread_waiting; /**< Whether there is a thread waiting for the lock. */
-    struct thread* holder; /**< Thread holding lock (for debugging). */
+    
+    struct thread* holder; /**< Thread holding lock. */
     struct semaphore semaphore; /**< Binary semaphore controlling access. */
 };
 
@@ -67,6 +67,7 @@ bool thread_cmp_priority(const struct list_elem* a,
                          const struct list_elem* b,
                          void* aux);
 
+void thread_update_priority(struct thread* t);
 /** Optimization barrier.
 
    The compiler will not reorder operations across an

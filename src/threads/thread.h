@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "fixed_point.h"
+#include "threads/synch.h"
 
 /** States in a thread's life cycle. */
 enum thread_status {
@@ -22,6 +24,27 @@ typedef int tid_t;
 #define PRI_MIN 0      /**< Lowest priority. */
 #define PRI_DEFAULT 31 /**< Default priority. */
 #define PRI_MAX 63     /**< Highest priority. */
+
+/*Child thread*/
+struct child_thread
+{
+    tid_t tid;                   /*Child thread id*/
+    int exit_status;             /*Child thread exit status*/
+    bool is_alive;               /*Child thread is alive or not*/
+    bool is_waited;              /*Child thread is waited or not*/
+    struct semaphore sema;       /*Child thread semaphore*/
+    struct thread *self_t;              /*Child thread parent*/
+    struct thread *parent;          /*Child thread parent*/
+    struct list_elem elem;      /*Child thread list element*/
+};
+
+/*files of a thread*/
+struct thread_file{
+      int fd;                     /*file descriptor*/
+      struct file *file;          /*file pointer*/
+      struct list_elem elem;      /*file list element*/
+   
+};
 
 /** A kernel thread or user process.
 
@@ -91,16 +114,30 @@ struct thread {
     /* Shared between thread.c and synch.c. */
     struct list_elem elem; /**< List element. */
 
-    /* Added by me */
+    /* Added by me in Lab1*/
     uint64_t ticks2wait;       /**< Ticks to wait in thread_sleep(). */
     int original_priority;     /**< Original priority. Initiated to -1.*/
     struct list locks_held;    /**< List of locks held by thread. */
     struct lock* lock_waiting; /**< Lock thread is waiting for. */
 
+      /* Added by me in Lab2*/
+      struct list child_list; /**< List of child threads. */
+      struct child_thread* self_as_child; /**< Self as child thread. */
+      struct thread* parent; /**< Parent thread. */
+      struct semaphore sc_exec_sema; /**< Semaphore for exec. */
+      bool child_exec_success; /**< Child exec success. */
+      struct list files_list; /**< List of files. */
+      int next_fd; /**< Next file descriptor. */
+      struct file* executable_file; /**< Executable file. */
+
+    int nice;
+    fixed_point_t recent_cpu;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t* pagedir; /**< Page directory. */
 #endif
+    int exit_code; /**< Exit code of thread. */
 
     /* Owned by thread.c. */
     unsigned magic; /**< Detects stack overflow. */
@@ -148,14 +185,25 @@ bool thread_priority_bigger(const struct list_elem* a,
                             const struct list_elem* b,
                             void* aux UNUSED);
 
-//void thread_donate_priority(struct thread* t);
+// void thread_donate_priority(struct thread* t);
 void list_insert_ordered_inthread(struct list_elem* elem,
                                   list_less_func* less,
                                   void* aux);
 
-void 
-thread_donate_priority(struct thread* t);//donator, struct lock* donatee);
+void thread_donate_priority(
+    struct thread* t);  // donator, struct lock* donatee);
 
-void print_ready_list(void); //for debugging
+void print_ready_list(void);  // for debugging
+
+/*Mission 3*/
+void thread_mlfqs_increment_recent_cpu(void);
+// void thread_mlfqs_update_recent_cpu();
+
+void thread_update_recent_cpu(struct thread* t, void* aux UNUSED);
+// void thread_mlfqs_update_load_avg();
+void thread_update_load_avg(void);
+
+int modify_in_range(int priority);
+void thread_mlfqs_update_priority(struct thread* t);
 
 #endif /**< threads/thread.h */
