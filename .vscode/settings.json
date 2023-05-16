@@ -1,0 +1,8 @@
+{
+    "editor.suggest.snippetsPreventQuickSuggestions": false,
+    "aiXcoder.showTrayIcon": true,
+    "files.associations": {
+        "syscall.h": "c",
+        "*.inc": "c"
+    }
+}
