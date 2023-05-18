@@ -5,6 +5,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 
 /** Number of page faults processed. */
 static long long page_fault_cnt;
@@ -157,22 +159,51 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  #ifdef VM
+  #ifdef DEBUG
+  printf("The fault addr is %p\n", fault_addr);
+   #endif
+   //print all three flags
+   //printf("not_present = %d, write = %d, user = %d, fault_addr = %p\n", not_present, write, user, fault_addr);
+   if (not_present && (user||fault_addr < PHYS_BASE)){
+      //load page from supplemental page table、
+      // if (fault_addr == NULL || !is_user_vaddr(fault_addr)) { 
+      //    f->eip = (void (*) (void)) f->eax;
+      //    f->eax = -1;
+      //    return;
+      // }
+      bool success = load_page(fault_addr);
+      // if (!success) {
+      //    f->eip = (void (*) (void)) f->eax;
+      //    f->eax = -1;
+      //    return;
+      // }
+      // return; 
+      if(success) return;
+   }
+   #endif
    if (!user) {
     f->eip = (void (*) (void)) f->eax;
     f->eax = -1;
-    return;
-  }      
+    return; 
+  }     
+   //    f->eip = (void (*) (void)) f->eax;
+   //  f->eax = -1;
+   //  return; 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
 //printf("Here I'm in page_fault(), user = %d.\n", user);
+
+   //TODO: Implement lazy loading
+
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
     
-  kill (f);
+   kill (f);
 }
 
 

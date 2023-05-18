@@ -17,6 +17,15 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#ifdef VM
+#include "vm/frame.h"
+#include "vm/page.h"
+#endif
+
+extern struct lock filesys_lock;
+extern struct lock filesys_lock2;
+extern struct lock lock_for_scan;
+extern struct lock sup_page_lock;
 
 #define MAX_ARGS 128
 
@@ -83,9 +92,11 @@ static void start_process(void* command_line_) {
     if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
-    lock_acquire(&filesys_lock);
+    //lock_acquire(&filesys_lock);
+    lock_acquire(&filesys_lock2);
     success = load(file_name, &if_.eip, &if_.esp);
-    lock_release(&filesys_lock);
+    //lock_release(&filesys_lock);
+    lock_release(&filesys_lock2);
 
     struct thread* cur = thread_current();
 
@@ -103,11 +114,11 @@ static void start_process(void* command_line_) {
     
     lock_acquire(&filesys_lock);
     struct file* file = filesys_open(file_name);
-    if (file != NULL) {
+    //if (file != NULL) {
         file_deny_write(file);
-    }
-    lock_release(&filesys_lock);
+    //}
     thread_current()->executable_file = file;
+    lock_release(&filesys_lock);
 
     /* Push arguments onto stack. */
     int argc = 0;
@@ -203,6 +214,16 @@ void process_exit(void) {
     struct thread* cur = thread_current();
     uint32_t* pd;
     printf ("%s: exit(%d)\n",thread_name(), thread_current()->exit_code);
+    lock_acquire(&filesys_lock);
+    file_close(cur->executable_file);
+    lock_release(&filesys_lock);
+    #ifdef VM
+    lock_acquire(&sup_page_lock);
+    lock_acquire(&lock_for_scan);
+    hash_destroy(&cur->sup_page_table, page_destroy);
+    lock_release(&lock_for_scan);
+    lock_release(&sup_page_lock);
+    #endif
 
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
@@ -219,9 +240,6 @@ void process_exit(void) {
         pagedir_activate(NULL);
         pagedir_destroy(pd);
     }
-    lock_acquire(&filesys_lock);
-    file_close(cur->executable_file);
-    lock_release(&filesys_lock);
 
 }
 
@@ -314,6 +332,7 @@ static bool load_segment(struct file* file,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool load(const char* file_name, void (**eip)(void), void** esp) {
+    lock_acquire(&filesys_lock);
     struct thread* t = thread_current();
     struct Elf32_Ehdr ehdr;
     struct file* file = NULL;
@@ -323,11 +342,18 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
 
     /* Allocate and activate page directory. */
     t->pagedir = pagedir_create();
+    #ifdef VM
+        /*lab3a*/
+        
+        //sup_page_table_init(&(t->sup_page_table));
+        hash_init(&(t->sup_page_table), sup_page_hash, sup_page_less, NULL);
+    #endif
     if (t->pagedir == NULL)
         goto done;
     process_activate();
 
     /* Open executable file. */
+    //printf("file_name : %s\n", file_name);
     file = filesys_open(file_name);
     if (file == NULL) {
         printf("load: %s: open failed\n", file_name);
@@ -409,6 +435,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
 done:
     /* We arrive here whether the load is successful or not. */
     file_close(file);
+    lock_release(&filesys_lock);
     return success;
 }
 
@@ -483,6 +510,8 @@ static bool load_segment(struct file* file,
     ASSERT(pg_ofs(upage) == 0);
     ASSERT(ofs % PGSIZE == 0);
 
+    #ifndef VM
+
     file_seek(file, ofs);
     while (read_bytes > 0 || zero_bytes > 0) {
         /* Calculate how to fill this page.
@@ -515,11 +544,53 @@ static bool load_segment(struct file* file,
         upage += PGSIZE;
     }
     return true;
+
+    #else
+
+    //TODO: Implement lazy loading
+    while(read_bytes > 0 || zero_bytes > 0) {
+        size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+        size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+        struct sup_page_entry* sup_page_entry_ = malloc(sizeof(struct sup_page_entry));
+        if(sup_page_entry_ == NULL)
+            return false;
+
+        //sup_page_entry_->file = file;
+        sup_page_entry_->upage = upage;
+        sup_page_entry_->zero_bytes = page_zero_bytes;
+        sup_page_entry_->read_bytes = page_read_bytes;
+        sup_page_entry_->writable = writable;
+        sup_page_entry_->loaded = false;
+        sup_page_entry_->thread = thread_current();
+        sup_page_entry_->sector = (block_sector_t) -1;
+        sup_page_entry_->frame_entry = NULL;
+
+        // sup_page_entry_->swap = false;
+        // sup_page_entry_->swap_index = 0;
+        //if(page_read_bytes > 0){
+            sup_page_entry_->file = file_reopen(file);
+            sup_page_entry_->ofs = ofs;
+            sup_page_entry_->read_bytes = page_read_bytes;
+        //}
+
+        bool success = sup_page_insert(&thread_current()->sup_page_table, sup_page_entry_);
+        ASSERT(success);
+
+        read_bytes -= page_read_bytes;
+        zero_bytes -= page_zero_bytes;
+        upage += PGSIZE;
+        ofs += page_read_bytes;
+    }
+    return true;
+
+    #endif
 }
 
 /** Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool setup_stack(void** esp) {
+    #ifndef VM
     uint8_t* kpage;
     bool success = false;
 
@@ -532,6 +603,32 @@ static bool setup_stack(void** esp) {
             palloc_free_page(kpage);
     }
     return success;
+    #else
+    //TODO: Implement lazy loading
+    // bool success = false;
+    // struct sup_page_entry* sup_page_entry_ = malloc(sizeof(struct sup_page_entry));
+    // if(sup_page_entry_ == NULL)
+    //     return false;
+    struct thread* t = thread_current();
+    uint8_t* upage = ((uint8_t*)PHYS_BASE) - PGSIZE;
+
+    /* Do not allocate a page. Just set up the stack pointer. */
+
+    struct sup_page_entry* sup_page_entry_ = sup_page_alloc(upage, true);
+    *esp = PHYS_BASE;
+    if(sup_page_entry_ != NULL){
+        // void* frame = get_frame(sup_page_entry_);
+
+        // if(frame != NULL){
+        //     bool success = install_page(upage, frame, true);
+        //     sup_page_entry_->kpage = frame;
+        //     return success;
+        // }
+        load_page(sup_page_entry_->upage);
+    }
+    else
+        return false;
+    #endif
 }
 
 /** Adds a mapping from user virtual address UPAGE to kernel

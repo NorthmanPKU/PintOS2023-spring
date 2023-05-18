@@ -209,7 +209,7 @@ void lock_acquire(struct lock* lock) {
 
         struct thread* t = thread_current();
         if (lock->holder != NULL && !thread_mlfqs) {
-            t->lock_waiting = lock;
+            t->lock_waiting = lock; 
             lock->max_priority = max(lock->max_priority, t->priority);
             lock->holder->priority = max(lock->holder->priority, t->priority);
 
@@ -259,8 +259,17 @@ bool lock_try_acquire(struct lock* lock) {
     ASSERT(!lock_held_by_current_thread(lock));
 
     success = sema_try_down(&lock->semaphore);
-    if (success)
+    if (success){
         lock->holder = thread_current();
+
+
+        if (!thread_mlfqs) {
+        /** maintain the lock_list */
+        list_insert_ordered(&thread_current()->locks_held, &lock->elem, lock_cmp_priority, NULL);
+
+        
+        }
+    } 
     return success;
 }
 

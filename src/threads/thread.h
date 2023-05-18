@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include "fixed_point.h"
 #include "threads/synch.h"
+#include <hash.h>
+#include "vm/page.h"
+#include "lib/kernel/hash.h"
 
 /** States in a thread's life cycle. */
 enum thread_status {
@@ -137,6 +140,10 @@ struct thread {
     /* Owned by userprog/process.c. */
     uint32_t* pagedir; /**< Page directory. */
 #endif
+#ifdef VM
+    struct hash sup_page_table; /**< Supplemental page table. */
+#endif
+
     int exit_code; /**< Exit code of thread. */
 
     /* Owned by thread.c. */

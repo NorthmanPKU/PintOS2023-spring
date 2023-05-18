@@ -1,0 +1,135 @@
+#include "threads/synch.h"
+#include "threads/malloc.h"
+#include "threads/palloc.h"
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
+#include "vm/page.h"
+#include "vm/frame.h"
+#include "filesys/file.h"
+#include <hash.h>
+#include <string.h>
+#include "lib/kernel/hash.h"
+#include <debug.h>
+#include <inttypes.h>
+#include <round.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static size_t frame_cnt;
+
+void frame_table_init (void){ 
+    printf("frame_table_init\n"); 
+    list_init(&frame_table);
+    hash_init(&frame_hash_table, frame_hash, frame_less, NULL);
+    lock_init(&frame_lock);
+
+    //get all the frames
+    void *frame = palloc_get_page(PAL_USER | PAL_ZERO);
+    while(frame != NULL){
+        frame_cnt++;
+        struct frame_entry *frame_entry = malloc(sizeof(struct frame_entry));
+        frame_entry->frame = frame;
+        frame_entry->thread = NULL;
+        frame_entry->page = NULL;
+        lock_acquire(&frame_lock);
+        list_push_back(&frame_table, &frame_entry->elem);
+        hash_insert(&frame_hash_table, &frame_entry->hash_elem);
+        lock_release(&frame_lock);
+        frame = palloc_get_page(PAL_USER | PAL_ZERO);
+    }
+}
+void *get_frame(enum palloc_flags flags, struct sup_page_entry *page){
+    
+    if(frame == NULL){
+        //frame = evict_frame(flags, page);
+    }
+    struct frame_entry *frame_entry = malloc(sizeof(struct frame_entry));
+    frame_entry->frame = frame;
+    frame_entry->thread = thread_current();
+    frame_entry->page = page;
+    lock_acquire(&frame_lock);
+    list_push_back(&frame_table, &frame_entry->elem);
+    hash_insert(&frame_hash_table, &frame_entry->hash_elem);
+    lock_release(&frame_lock);
+    return frame;
+}
+void frame_free (void *frame){
+    struct frame_entry *frame_entry = frame_lookup(frame);
+    if(frame_entry != NULL){
+        lock_acquire(&frame_lock);
+        list_remove(&frame_entry->elem);
+        hash_delete(&frame_hash_table, &frame_entry->hash_elem);
+        lock_release(&frame_lock);
+        free(frame_entry);
+    }
+    palloc_free_page(frame);
+}
+
+// //evict frame
+// void *evict_frame(enum palloc_flags flags, struct page_entry *page){
+//     struct frame_entry *frame_entry = NULL;
+//     struct list_elem *e;
+//     for(e = list_begin(&frame_table); e != list_end(&frame_table); e = list_next(e)){
+//         struct frame_entry *f = list_entry(e, struct frame_entry, elem);
+//         if(pagedir_is_accessed(f->thread->pagedir, f->page->vaddr)){
+//             pagedir_set_accessed(f->thread->pagedir, f->page->vaddr, false);
+//         }else{
+//             frame_entry = f;
+//             break;
+//         }
+//     }
+//     if(frame_entry == NULL){
+//         PANIC("No frame to evict");
+//     }
+//     struct thread *t = frame_entry->thread;
+//     struct page_entry *p = frame_entry->page;
+//     /*
+//     if(p->type == FILE){
+//         if(p->writable){
+//             file_write_at(p->file, frame_entry->frame, p->read_bytes, p->offset);
+//         }
+//         file_close(p->file);
+//     }else if(p->type == SWAP){
+//         swap_write(p->swap_index, frame_entry->frame);
+//     }
+//     */
+//     pagedir_clear_page(t->pagedir, p->vaddr);
+//     p->frame = NULL;
+//     frame_entry->thread = NULL;
+//     frame_entry->page = NULL;
+//     return frame_entry->frame;
+// }
+
+bool frame_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED){
+    struct frame_entry *frame_a = hash_entry(a, struct frame_entry, hash_elem);
+    struct frame_entry *frame_b = hash_entry(b, struct frame_entry, hash_elem);
+    return frame_a->frame < frame_b->frame;
+}
+unsigned frame_hash (const struct hash_elem *p_, void *aux UNUSED){
+    const struct frame_entry *p = hash_entry(p_, struct frame_entry, hash_elem);
+    return hash_bytes(&p->frame, sizeof p->frame);
+}
+struct frame_entry *frame_lookup (void *frame){
+    struct frame_entry frame_entry;
+    struct hash_elem *e;
+    frame_entry.frame = frame;
+    e = hash_find(&frame_hash_table, &frame_entry.hash_elem);
+    return e != NULL ? hash_entry(e, struct frame_entry, hash_elem) : NULL;
+}
+
+// struct frame_entry *obtain_unused_frame(void){
+//     struct frame_entry *frame_entry = NULL;
+//     struct list_elem *e;
+//     for(e = list_begin(&frame_table); e != list_end(&frame_table); e = list_next(e)){
+//         struct frame_entry *f = list_entry(e, struct frame_entry, elem);
+//         if(f->thread == NULL){
+//             frame_entry = f;
+//             break;
+//         }
+//     }
+//     if(frame_entry == NULL){
+//         frame_entry = evict_frame(PAL_USER | PAL_ZERO, NULL);
+//     }
+//     return frame_entry;
+// }

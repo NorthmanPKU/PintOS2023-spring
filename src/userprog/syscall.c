@@ -6,7 +6,8 @@
 #include "filesys/filesys.h"
 
 #define N_SYSCALLS 20
-
+struct lock filesys_lock;
+struct lock filesys_lock2;
 static void syscall_handler(struct intr_frame*);
 
 static void syscall_halt(struct intr_frame* f) {
@@ -191,6 +192,7 @@ static void (*syscalls[N_SYSCALLS])(struct intr_frame *);
 void syscall_init(void) {
     intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
     lock_init(&filesys_lock);
+    lock_init(&filesys_lock2);
     syscalls[SYS_EXEC] = &syscall_exec;
     syscalls[SYS_EXIT] = &syscall_exit;
     syscalls[SYS_WAIT] = &syscall_wait;

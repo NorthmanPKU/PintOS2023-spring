@@ -37,6 +37,11 @@
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
 #endif
+#ifdef VM
+#include "vm/page.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
+#endif
 
 /** Page directory with kernel mappings only. */
 uint32_t *init_page_dir;
@@ -127,6 +132,11 @@ pintos_init (void)
   filesys_init (format_filesys);
 #endif
 
+#ifdef VM
+  frame_table_init ();
+  sup_page_table_init ();
+  swap_init ();
+#endif
   printf ("Boot complete.\n");
   
   if (*argv != NULL) {

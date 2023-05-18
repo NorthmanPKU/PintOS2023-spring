@@ -8,7 +8,10 @@
                 "${workspaceFolder}/src/lib",
                 "${workspaceFolder}/src/lib/kernel"
             ],
-            "defines": [],
+            "defines": [
+                "USERPROG",
+                "VM"
+            ],
             "macFrameworkPath": [
                 "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks"
             ],

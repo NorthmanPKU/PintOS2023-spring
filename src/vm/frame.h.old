@@ -1,0 +1,38 @@
+#ifndef VM_FRAME_H
+#define VM_FRAME_H
+#include "threads/synch.h"
+#include "threads/malloc.h"
+#include "threads/palloc.h"
+#include "threads/vaddr.h"
+#include <hash.h>
+#include <string.h>
+#include "lib/kernel/hash.h"
+
+struct frame_entry{
+    void *frame; /* Frame */
+    struct thread *thread; /* Thread that owns the frame */
+    struct page_entry *page; /* Page that is mapped to the frame */
+    struct list_elem elem; /* List element */
+    struct hash_elem hash_elem; /* Hash element */
+};
+
+static struct list frame_table; /* List of all frames */
+
+static struct hash frame_hash_table; /* Hash table of all frames */
+
+static struct lock frame_lock; /* Lock for frame table */
+
+void frame_table_init (void);
+void *get_frame(struct page_entry *page);
+
+bool frame_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED);
+unsigned frame_hash (const struct hash_elem *p_, void *aux UNUSED);
+struct frame_entry *frame_lookup (void *frame);
+void frame_free (void *frame);
+//evict frame
+//void *evict_frame(enum palloc_flags flags, struct page_entry *page);
+
+//obtain_unused_frame
+//struct frame_entry *obtain_unused_frame(void);
+
+#endif /* vm/frame.h */
