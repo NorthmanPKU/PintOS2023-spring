@@ -550,6 +550,9 @@ static void init_thread(struct thread* t, const char* name, int priority) {
     /*Lab2 end*/
     t->magic = THREAD_MAGIC;
 
+    /* lab3b */
+    list_init(&t->mmap_list);
+
     old_level = intr_disable();
     // list_push_back (&all_list, &t->allelem);
     list_insert_ordered(&all_list, &t->allelem,

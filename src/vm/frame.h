@@ -17,9 +17,9 @@ struct frame_entry{
 };
 
 void frame_table_init (void);
-struct frame_entry* get_frame(struct sup_page_entry *page);
+//struct frame_entry* get_frame(struct sup_page_entry *page);
+struct frame_entry* get_frame(void);
 void frame_free (struct frame_entry *frame_entry);
-//evict frame
-//void *evict_frame(struct sup_page_entry *page);
-struct frame_entry* evict_frame(struct sup_page_entry *page);
+
+struct frame_entry* evict_frame(void);
 #endif /* vm/frame.h */

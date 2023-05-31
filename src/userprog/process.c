@@ -58,12 +58,12 @@ tid_t process_execute(const char* command_line) {
 
     /* Create a new thread to execute FILE_NAME. */
     tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy_);
+    sema_down(&thread_current()->sc_exec_sema);
     if (tid == TID_ERROR){
         palloc_free_page(fn_copy);
         palloc_free_page(fn_copy_);
         return tid;
     }
-    sema_down(&thread_current()->sc_exec_sema);
     if(thread_current()->child_exec_success == false){
         return -1;
     }
@@ -93,10 +93,10 @@ static void start_process(void* command_line_) {
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
     //lock_acquire(&filesys_lock);
-    lock_acquire(&filesys_lock2);
+    //lock_acquire(&filesys_lock2);
     success = load(file_name, &if_.eip, &if_.esp);
     //lock_release(&filesys_lock);
-    lock_release(&filesys_lock2);
+    //lock_release(&filesys_lock2);
 
     struct thread* cur = thread_current();
 
@@ -111,6 +111,8 @@ static void start_process(void* command_line_) {
         thread_exit();
     }
 
+    //cur->parent->child_exec_success = 1;//
+    //sema_up(&cur->parent->sc_exec_sema);
     
     lock_acquire(&filesys_lock);
     struct file* file = filesys_open(file_name);
@@ -214,10 +216,18 @@ void process_exit(void) {
     struct thread* cur = thread_current();
     uint32_t* pd;
     printf ("%s: exit(%d)\n",thread_name(), thread_current()->exit_code);
+    enum intr_level old_level = intr_disable();
+    if(lock_held_by_current_thread(&filesys_lock))
+        lock_release(&filesys_lock);
     lock_acquire(&filesys_lock);
     file_close(cur->executable_file);
     lock_release(&filesys_lock);
+    intr_set_level(old_level);
     #ifdef VM
+    
+    if(lock_held_by_current_thread(&sup_page_lock))
+        lock_release(&sup_page_lock);
+
     lock_acquire(&sup_page_lock);
     lock_acquire(&lock_for_scan);
     hash_destroy(&cur->sup_page_table, page_destroy);
@@ -237,7 +247,7 @@ void process_exit(void) {
            directory, or our active page directory will be one
            that's been freed (and cleared). */
         cur->pagedir = NULL;
-        pagedir_activate(NULL);
+        pagedir_activate(NULL); 
         pagedir_destroy(pd);
     }
 

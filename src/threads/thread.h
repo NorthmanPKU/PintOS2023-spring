@@ -142,6 +142,8 @@ struct thread {
 #endif
 #ifdef VM
     struct hash sup_page_table; /**< Supplemental page table. */
+    //lab 3b
+    struct list mmap_list; /**< List of mmap files. */
 #endif
 
     int exit_code; /**< Exit code of thread. */

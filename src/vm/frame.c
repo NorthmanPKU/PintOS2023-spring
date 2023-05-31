@@ -20,14 +20,14 @@
 static struct frame_entry* frames;
 static size_t frame_cnt = 0;
 struct lock lock_for_scan;
-static size_t hand = 0;
+static size_t hand;
 
 void frame_table_init (void){
-    frames = malloc(sizeof (*frames) * init_ram_pages);
+    frames = (struct frame_entry *)malloc(sizeof (*frames) * init_ram_pages);
     if (frames == NULL)
         PANIC ("out of memory allocating page frames");
     void* p;
-    while(p = palloc_get_page(PAL_USER | PAL_ZERO)){
+    while(p = palloc_get_page(PAL_USER)){
         struct frame_entry* f = &frames[frame_cnt];
         f->frame = p;
         f->pinned = false;
@@ -38,9 +38,10 @@ void frame_table_init (void){
     #ifdef DEBUG
     printf("Frame init finsh! frame_cnt: %d\n", frame_cnt);
     #endif
-    random_init(233);
+    hand = 0;
     lock_init(&lock_for_scan);
 }
+#ifdef old_get_frame
 struct frame_entry* get_frame(struct sup_page_entry *page){
     lock_acquire(&lock_for_scan);
     for(int i = 0; i < frame_cnt; i++){
@@ -75,11 +76,46 @@ struct frame_entry* get_frame(struct sup_page_entry *page){
     lock_release(&lock_for_scan);
     return f;
 }
+#endif
+struct frame_entry* get_frame(void){
+    lock_acquire(&lock_for_scan);
+    for(int i = 0; i < frame_cnt; i++){
+        // if(!lock_try_acquire(&frames[i].frame_lock))
+        //     continue;
+        #ifdef DEBUG
+        printf("frame %d\n", i);
+        #endif
+        //lock_acquire(&frames[i].frame_lock);
+        struct frame_entry* f = &frames[i];
+        if(lock_try_acquire(&f->frame_lock)){
+            if(f->page == NULL){
+                //frames[i].page = page;
+                lock_release(&lock_for_scan);
+                
+                return f;
+            }
+            lock_release(&f->frame_lock);
+        }
+        //lock_release(&frames[i].frame_lock);
+    }
+    
+    struct frame_entry* f= evict_frame();
+    /* Evict this frame. */
+    // if (!page_out (f->page))
+    // {
+    //     //lock_release (&f->frame_lock);
+    //     lock_release(&lock_for_scan);
+    //     return NULL;
+    // }
+
+    //f->page = page;
+    lock_release(&lock_for_scan);
+    return f;
+}
 // struct frame_entry* evict_frame(struct sup_page_entry *page){
 //     //TODO:
 //     lock_acquire(&lock_for_scan);
 //     size_t step_cnt = frame_cnt*2;
-
 //     //clock algorithm
 //     uint32_t* pagedir = thread_current()->pagedir;
 //     while(step_cnt--){
@@ -97,7 +133,7 @@ struct frame_entry* get_frame(struct sup_page_entry *page){
 //     }
 //     return NULL;
 // }
-struct frame_entry* evict_frame(struct sup_page_entry *page){
+struct frame_entry* evict_frame(void){
     struct frame_entry *result = NULL;
     for (int i = 0; i < frame_cnt * 2; i++) {
       hand = (hand + 1) % frame_cnt;

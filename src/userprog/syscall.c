@@ -6,6 +6,8 @@
 #include "filesys/filesys.h"
 
 #define N_SYSCALLS 20
+typedef int mapid_t;
+
 struct lock filesys_lock;
 struct lock filesys_lock2;
 static void syscall_handler(struct intr_frame*);
@@ -186,11 +188,67 @@ static void syscall_close(struct intr_frame* f) {
     list_remove(&tf->elem);
     free(tf);
 }
+struct mmap_file {
+    mapid_t mapid;
+    int fd;
+    struct file *file;
+    void *addr;
+    int length;
+    struct list_elem elem;
+};
+
+struct list mmap_list;
+
+mapid_t mmap(int fd, void *addr){
+    struct thread *cur = thread_current();
+    struct thread_file *tf = get_thread_file(fd);
+    if (tf == NULL) {
+        return -1;
+    }
+    struct file *file = tf->file;
+    if (file == NULL) {
+        return -1;
+    }
+    int length = file_length(file);
+    if (length == 0) {
+        return -1;
+    }
+    if (addr == NULL || pg_ofs(addr) != 0) {
+        return -1;
+    }
+    int offset = 0;
+    while (length > 0) {
+        int read_bytes = length < PGSIZE ? length : PGSIZE;
+        int zero_bytes = PGSIZE - read_bytes;
+        if (page_lookup(addr) != NULL) {
+            return -1;
+        }
+        if (file_read(file, addr, read_bytes) != (int)read_bytes) {
+            return -1;
+        }
+        if (file_write(file, addr, read_bytes) != (int)read_bytes) {
+            return -1;
+        }
+        page_insert(addr, file, offset, read_bytes, zero_bytes, true);
+        length -= read_bytes;
+        offset += read_bytes;
+        addr += PGSIZE;
+    }
+    struct mmap_file *mf = malloc(sizeof(struct mmap_file));
+    mf->fd = cur->next_fd;
+    cur->next_fd++;
+    mf->file = file;
+    mf->addr = addr;
+    mf->length = offset;
+    list_push_back(&cur->mmap_list, &mf->elem);
+    return mf->fd;
+}
 
 static void (*syscalls[N_SYSCALLS])(struct intr_frame *);
 
 void syscall_init(void) {
     intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
+    list_init(&mmap_list);
     lock_init(&filesys_lock);
     lock_init(&filesys_lock2);
     syscalls[SYS_EXEC] = &syscall_exec;

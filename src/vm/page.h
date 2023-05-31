@@ -46,6 +46,7 @@ bool sup_page_insert (struct hash *sup_page_table, struct sup_page_entry *sup_pa
 bool sup_page_delete (struct hash *sup_page_table, struct sup_page_entry *sup_page_entry);
 //void sup_page_table_destroy (struct hash *sup_page_table);
 bool load_page (void *upage);
+
 bool page_accessed_recently (struct sup_page_entry *p);
 bool page_out (struct sup_page_entry *p);
 

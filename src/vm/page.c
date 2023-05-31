@@ -13,6 +13,7 @@
 #include "lib/kernel/hash.h"
 #include "devices/block.h"
 struct lock sup_page_lock;
+struct lock page_file_lock;
 struct sup_page_entry *sup_page_alloc (void *upage, bool writable){ //including insert into hash table
     struct sup_page_entry *sup_page_entry = malloc(sizeof(struct sup_page_entry));
     sup_page_entry->upage = upage;//
@@ -66,6 +67,7 @@ struct sup_page_entry *sup_page_lookup (void *upage){
 void sup_page_table_init (){//struct hash *sup_page_table){
     //hash_init(sup_page_table, sup_page_hash, sup_page_less, NULL);
     lock_init(&sup_page_lock);
+    lock_init(&page_file_lock);
 }
 bool sup_page_insert (struct hash *sup_page_table, struct sup_page_entry *sup_page_entry){
     lock_acquire(&sup_page_lock);
@@ -77,7 +79,7 @@ bool sup_page_delete (struct hash *sup_page_table, struct sup_page_entry *sup_pa
     lock_acquire(&sup_page_lock);
     struct hash_elem *e = hash_delete(sup_page_table, &sup_page_entry->hash_elem);
     lock_release(&sup_page_lock);
-    return e != NULL; 
+    return e != NULL;  
 }
 // void sup_page_table_destroy (struct hash *sup_page_table){
 //     lock_acquire(&sup_page_lock);
@@ -97,9 +99,11 @@ bool install_page (void *upage, void *kpage, bool writable){
 }
 bool load_page (void *upage){
     lock_acquire(&sup_page_lock);
+    //lock_acquire(&page_file_lock);
     struct sup_page_entry *sup_page_entry = sup_page_lookup(upage);
     if(sup_page_entry == NULL){
         lock_release(&sup_page_lock);
+        //lock_release(&page_file_lock);
 
         return false;
     }
@@ -112,10 +116,11 @@ bool load_page (void *upage){
     //     return false;
     // }
     //lock_acquire(&lock_for_scan);
-    struct frame_entry* frame = get_frame(sup_page_entry);
+    struct frame_entry* frame = get_frame();
     sup_page_entry->frame_entry = frame;
     if(frame == NULL){
-        //lock_release(&sup_page_lock);
+        lock_release(&sup_page_lock);
+        //lock_release(&page_file_lock);
         return false;
     }
     sup_page_entry->frame_entry->page = sup_page_entry;
@@ -145,10 +150,13 @@ bool load_page (void *upage){
         return false;
     }
     //sup_page_entry->loaded = true;
+
+    //lock_release(&page_file_lock);
     lock_release(&sup_page_lock);
 
     return true;
 }
+
 
 
 
