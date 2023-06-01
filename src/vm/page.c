@@ -129,17 +129,17 @@ bool install_page (void *upage, void *kpage, bool writable){
 bool load_page (void *upage){
     //enum intr_level old_level = intr_disable();
     //printf("The thread gonna acquire the lock is %d\n", thread_current()->tid);
-    if(lock_held_by_current_thread(&sup_page_lock)){
-        lock_release(&sup_page_lock);
-    }
+    // if(lock_held_by_current_thread(&sup_page_lock)){
+    //     lock_release(&sup_page_lock);
+    // }
     //printf("The thread gonna acquire the lock is %d\n", thread_current()->tid); 
-    lock_acquire(&sup_page_lock);
+    //lock_acquire(&sup_page_lock);
     //intr_set_level(old_level);
     //lock_acquire(&page_file_lock);
     struct sup_page_entry *sup_page_entry = sup_page_lookup(upage);
     if(sup_page_entry == NULL){
         //printf("140: the thread %d release the lock\n", thread_current()->tid);
-        lock_release(&sup_page_lock);
+        //lock_release(&sup_page_lock);
         //lock_release(&page_file_lock);
 
         return false;
@@ -153,16 +153,21 @@ bool load_page (void *upage){
     //     return false;
     // }
     //lock_acquire(&lock_for_scan);
-    struct frame_entry* frame = get_frame();
+    lock_frame(sup_page_entry);
+    if(sup_page_entry->frame_entry != NULL){
+        goto HAVE_FRAME;
+    }
+    struct frame_entry* frame = get_frame(sup_page_entry);
     sup_page_entry->frame_entry = frame;
     if(frame == NULL){
         //printf("157: the thread %d release the lock\n", thread_current()->tid);
-        lock_release(&sup_page_lock);
+        //lock_release(&sup_page_lock);
         //lock_release(&page_file_lock);
+        //unlock_frame(sup_page_entry->frame_entry);
         return false;
     }
-    sup_page_entry->frame_entry->page = sup_page_entry;
-    lock_release(&sup_page_entry->frame_entry->frame_lock);
+    //frame->page = sup_page_entry;
+    //lock_release(&sup_page_entry->frame_entry->frame_lock);
     if(sup_page_entry->sector != (block_sector_t) -1){
         swap_in(sup_page_entry);
     }
@@ -176,6 +181,8 @@ bool load_page (void *upage){
     else{
         memset(frame->frame, 0, PGSIZE);
     }
+HAVE_FRAME:
+    ASSERT(lock_held_by_current_thread (&sup_page_entry->frame_entry->frame_lock));
     // if(file_read_at(sup_page_entry->file, frame, sup_page_entry->read_bytes, sup_page_entry->ofs) != (int)sup_page_entry->read_bytes){
     //     //frame_free(frame);
     //     ASSERT(false);
@@ -185,7 +192,8 @@ bool load_page (void *upage){
     if(!install_page(sup_page_entry->upage, frame->frame, sup_page_entry->writable)){
         //frame_free(frame);
         //printf("185: the thread %d release the lock\n", thread_current()->tid);
-        lock_release(&sup_page_lock);
+        //lock_release(&sup_page_lock);
+        unlock_frame(sup_page_entry->frame_entry);
         return false;
     }
     //sup_page_entry->loaded = true;
@@ -193,11 +201,43 @@ bool load_page (void *upage){
     //lock_release(&page_file_lock);
     sup_page_entry->status = FRAME;
     //printf("193: the thread %d release the lock\n", thread_current()->tid);
-    lock_release(&sup_page_lock);
-
+    //lock_release(&sup_page_lock);
+    unlock_frame(sup_page_entry->frame_entry);
     return true;
 }
 
+static bool do_load_page(struct sup_page_entry *p){
+    struct frame_entry* frame = get_frame(p);
+    p->frame_entry = frame;
+    if(frame == NULL){
+        //printf("157: the thread %d release the lock\n", thread_current()->tid);
+        //lock_release(&sup_page_lock);
+        //lock_release(&page_file_lock);
+        return false;
+    }
+    //sup_page_entry->frame_entry = frame;
+    //frame->page = sup_page_entry;
+    //lock_release(&sup_page_entry->frame_entry->frame_lock);
+    if(p->sector != (block_sector_t) -1){
+        swap_in(p);
+    }
+    else if(p->file != NULL){
+        size_t bytes_read = file_read_at(p->file, p->frame_entry->frame, p->read_bytes, p->ofs);
+        memset(p->frame_entry->frame + bytes_read, 0, PGSIZE - bytes_read);
+        if(bytes_read != p->read_bytes){
+            printf("bytes_read: %d, read_bytes: %d\n", bytes_read, p->read_bytes);
+        }
+    }
+    else{
+        memset(frame->frame, 0, PGSIZE);
+    }
+
+    p->status = FRAME;
+    //printf("193: the thread %d release the lock\n", thread_current()->tid);
+    //lock_release(&sup_page_lock);
+
+    return true;
+}
 
 
 
@@ -243,4 +283,28 @@ void page_free (struct sup_page_entry *p){
         p->frame_entry = NULL;
     }
     free(p);
+}
+
+bool lock_page(void* addr, bool plan2write){
+    struct sup_page_entry *p = sup_page_lookup(addr);
+    if(p == NULL || (!p->writable && plan2write)){
+        return false;
+    }
+    lock_frame(p);
+    if(p->frame_entry == NULL) {
+        return do_load_page(addr)&&pagedir_set_page(thread_current()->pagedir, p->upage, p->frame_entry->frame, p->writable);
+    }
+    else {
+        return true;
+     }    
+}
+
+bool unlock_page(void* addr){
+    struct sup_page_entry *p = sup_page_lookup(addr);
+    if(p == NULL){
+        ASSERT(false);
+        return false;
+    }
+    unlock_frame(p->frame_entry);
+    return true;
 }

@@ -200,7 +200,7 @@ page_fault (struct intr_frame *f)
       if(success) return;
    //}
    #endif
-   DEAL:
+DEAL:
    if (!user) {
     f->eip = (void (*) (void)) f->eax;
     f->eax = -1;

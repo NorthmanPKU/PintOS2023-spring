@@ -57,4 +57,6 @@ bool page_out (struct sup_page_entry *p);
 void page_destroy (struct hash_elem *e, void *aux UNUSED);
 void page_free (struct sup_page_entry *p);
 
+bool lock_page(void* addr, bool writeable);
+
 #endif /* vm/page.h */

@@ -77,7 +77,7 @@ struct frame_entry* get_frame(struct sup_page_entry *page){
     return f;
 }
 #endif
-struct frame_entry* get_frame(void){
+struct frame_entry* get_frame(struct sup_page_entry *page){
     lock_acquire(&lock_for_scan);
     for(int i = 0; i < frame_cnt; i++){
         // if(!lock_try_acquire(&frames[i].frame_lock))
@@ -89,7 +89,7 @@ struct frame_entry* get_frame(void){
         struct frame_entry* f = &frames[i];
         if(lock_try_acquire(&f->frame_lock)){
             if(f->page == NULL){
-                //frames[i].page = page;
+                f->page = page;
                 lock_release(&lock_for_scan);
                 
                 return f;
@@ -108,7 +108,7 @@ struct frame_entry* get_frame(void){
     //     return NULL;
     // }
 
-    //f->page = page;
+    f->page = page;
     lock_release(&lock_for_scan);
     return f;
 }
@@ -190,4 +190,20 @@ void frame_set_pinned(void *kpage, bool new_value){
         }
     }
     lock_release(&lock_for_scan);
+}
+
+void lock_frame(struct sup_page_entry *p){
+    struct frame_entry *f = p->frame_entry;
+    if(f!= NULL){
+        lock_acquire(&f->frame_lock);
+        if(f != p->frame_entry){
+            lock_release(&f->frame_lock);
+            ASSERT(p->frame_entry == NULL);
+        }
+    }
+}
+
+void unlock_frame(struct frame_entry *f){
+    ASSERT(lock_held_by_current_thread(&f->frame_lock));
+    lock_release(&f->frame_lock);
 }

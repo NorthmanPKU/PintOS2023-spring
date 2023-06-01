@@ -116,6 +116,7 @@ static void syscall_read(struct intr_frame* f) {
         }
         f->eax = size;
     } else {
+
         struct thread_file *tf = get_thread_file(fd);
         if (tf == NULL) {
             f->eax = -1;
@@ -137,20 +138,67 @@ static void syscall_write(struct intr_frame* f) {
 
     //printf("fd: %d, buf: %s, size: %d\n", fd, buf, size);
 
-    if (fd == 1) {
-        putbuf(buf, size);
-        f->eax = size;
-    }
-    else {
-        struct thread_file *tf = get_thread_file(fd);
-        if (tf == NULL) {
+    // if (fd == 1) {
+    //     putbuf(buf, size);
+    //     f->eax = size;
+    // }
+    // else {
+    //     // struct thread_file *tf = get_thread_file(fd);
+    //     // if (tf == NULL) {
+    //     //     f->eax = -1;
+    //     //     return;
+    //     // }
+    //     // lock_acquire(&filesys_lock);
+    //     // f->eax = file_write(tf->file, buf, size);
+    //     // lock_release(&filesys_lock);
+        
+    // }
+    int size_ = size;
+    struct thread_file *tf;
+    int written_bytes = 0;
+    if(fd != STDOUT_FILENO){
+        tf = get_thread_file(fd);
+        if(tf == NULL){
+            //PANIC("file not found");
             f->eax = -1;
             return;
         }
-        lock_acquire(&filesys_lock);
-        f->eax = file_write(tf->file, buf, size);
-        lock_release(&filesys_lock);
     }
+    while(size_ > 0){
+        size_t page_left = PGSIZE - pg_ofs(buf);
+        size_t write_amt = size_ < page_left ? size : page_left;
+        off_t return_value;
+
+        if(!lock_page(buf, false)){
+            thread_exit();
+        }
+        lock_acquire(&filesys_lock);
+        if(fd == STDOUT_FILENO){
+            putbuf(buf, write_amt);
+            return_value = write_amt;
+        }
+        else{
+            return_value = file_write(tf->file, buf, write_amt);
+        }
+        lock_release(&filesys_lock);
+        unlock_page(buf);
+
+        if(return_value < 0){
+            if(written_bytes == 0){
+                written_bytes = -1;
+            }
+            break;
+        }
+        written_bytes += return_value;
+
+        if (return_value !=(off_t) write_amt) {
+            break;
+        }
+        size_ -= return_value;
+        buf += return_value;
+    }
+
+    f->eax = written_bytes;
 }
 static void syscall_seek(struct intr_frame* f) {
     pointer_checker(f->esp + 1, sizeof(int), 0);
@@ -267,6 +315,7 @@ static mapid_t sys_mmap(int fd, void *addr){
     list_push_back(&cur->mmap_list, &mf->elem);
     
     lock_release(&filesys_lock);
+
     return mf->mapid;
 }
 
