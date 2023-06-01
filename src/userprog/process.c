@@ -1,4 +1,5 @@
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
@@ -113,14 +114,16 @@ static void start_process(void* command_line_) {
 
     //cur->parent->child_exec_success = 1;//
     //sema_up(&cur->parent->sc_exec_sema);
-    
+
+    /*
     lock_acquire(&filesys_lock);
     struct file* file = filesys_open(file_name);
     //if (file != NULL) {
-        file_deny_write(file);
+    file_deny_write(file);
     //}
     thread_current()->executable_file = file;
     lock_release(&filesys_lock);
+    */
 
     /* Push arguments onto stack. */
     int argc = 0;
@@ -233,6 +236,15 @@ void process_exit(void) {
     hash_destroy(&cur->sup_page_table, page_destroy);
     lock_release(&lock_for_scan);
     lock_release(&sup_page_lock);
+
+    //munmap
+    struct list *mmap_l = &cur->mmap_list;
+    struct list_elem *e;
+    while(!list_empty(mmap_l)){
+        e = list_begin(mmap_l);
+        struct mmap_file *mmap_f = list_entry(e, struct mmap_file, elem);
+        ASSERT(munmap(mmap_f->mapid) == true);
+    }
     #endif
 
     /* Destroy the current process's page directory and switch back
@@ -347,7 +359,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
     struct Elf32_Ehdr ehdr;
     struct file* file = NULL;
     off_t file_ofs;
-    bool success = false;
+    bool success = false; 
     int i;
 
     /* Allocate and activate page directory. */
@@ -369,6 +381,8 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
         printf("load: %s: open failed\n", file_name);
         goto done;
     }
+    file_deny_write(file);
+    t->executable_file = file;
 
     /* Read and verify executable header. */
     if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr ||
@@ -444,7 +458,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
 
 done:
     /* We arrive here whether the load is successful or not. */
-    file_close(file);
+    //file_close(file);
     lock_release(&filesys_lock);
     return success;
 }
@@ -575,6 +589,7 @@ static bool load_segment(struct file* file,
         sup_page_entry_->thread = thread_current();
         sup_page_entry_->sector = (block_sector_t) -1;
         sup_page_entry_->frame_entry = NULL;
+        sup_page_entry_->status = FILE;
 
         // sup_page_entry_->swap = false;
         // sup_page_entry_->swap_index = 0;

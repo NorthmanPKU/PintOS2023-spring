@@ -6,7 +6,7 @@
 #include "filesys/filesys.h"
 
 #define N_SYSCALLS 20
-typedef int mapid_t;
+
 
 struct lock filesys_lock;
 struct lock filesys_lock2;
@@ -188,67 +188,184 @@ static void syscall_close(struct intr_frame* f) {
     list_remove(&tf->elem);
     free(tf);
 }
-struct mmap_file {
-    mapid_t mapid;
-    int fd;
-    struct file *file;
-    void *addr;
-    int length;
-    struct list_elem elem;
-};
 
-struct list mmap_list;
 
-mapid_t mmap(int fd, void *addr){
-    struct thread *cur = thread_current();
-    struct thread_file *tf = get_thread_file(fd);
-    if (tf == NULL) {
+static mapid_t sys_mmap(int fd, void *addr){
+    //return 666;
+    if(fd == 0 || fd == 1){
         return -1;
     }
-    struct file *file = tf->file;
+    // return 6;
+    if (addr == NULL || pg_ofs(addr) != 0) {
+        return -1;
+    }
+    struct thread *cur = thread_current();
+    lock_acquire(&filesys_lock);
+    struct thread_file *file_d = get_thread_file(fd);
+    struct file *file = NULL;
+    if(file_d && file_d->file){
+        file = file_reopen(file_d->file);
+    }
+    // if (file_d == NULL) {
+    //     lock_release(&filesys_lock);
+    //     return -1;
+    // }
+    //struct file *file = tf->file;
     if (file == NULL) {
+        lock_release(&filesys_lock);
         return -1;
     }
     int length = file_length(file);
     if (length == 0) {
-        return -1;
+        lock_release(&filesys_lock);
+        return -1; 
     }
-    if (addr == NULL || pg_ofs(addr) != 0) {
-        return -1;
+    
+    int offset_ = 0;
+    //Ensure all the page addresses are not mapped
+    for(; offset_ < length; offset_ += PGSIZE){
+        if(sup_page_exists(addr + offset_)){
+            lock_release(&filesys_lock);
+            return -1;
+        }
     }
+
     int offset = 0;
     while (length > 0) {
         int read_bytes = length < PGSIZE ? length : PGSIZE;
         int zero_bytes = PGSIZE - read_bytes;
-        if (page_lookup(addr) != NULL) {
-            return -1;
-        }
-        if (file_read(file, addr, read_bytes) != (int)read_bytes) {
-            return -1;
-        }
-        if (file_write(file, addr, read_bytes) != (int)read_bytes) {
-            return -1;
-        }
-        page_insert(addr, file, offset, read_bytes, zero_bytes, true);
+
+        struct sup_page_entry *spte = malloc(sizeof(struct sup_page_entry));
+        spte = sup_page_alloc(addr + offset, true);
+        ASSERT(spte != NULL);
+        spte->file = file;
+        spte->ofs = offset;
+        spte->read_bytes = read_bytes;
+        spte->zero_bytes = zero_bytes;
+        spte->status = FILE;
+
+
         length -= read_bytes;
         offset += read_bytes;
-        addr += PGSIZE;
+        //addr += PGSIZE;
     }
+
     struct mmap_file *mf = malloc(sizeof(struct mmap_file));
+    if(list_empty(&cur->mmap_list)){
+        mf->mapid = 1;
+    }
+    else{
+        struct list_elem *e = list_back(&cur->mmap_list);
+        struct mmap_file *last = list_entry(e, struct mmap_file, elem);
+        mf->mapid = last->mapid + 1;
+    }
     mf->fd = cur->next_fd;
     cur->next_fd++;
     mf->file = file;
     mf->addr = addr;
     mf->length = offset;
     list_push_back(&cur->mmap_list, &mf->elem);
-    return mf->fd;
+    
+    lock_release(&filesys_lock);
+    return mf->mapid;
+}
+
+bool munmap(mapid_t mapping){
+    struct thread *cur = thread_current();
+    struct list_elem *e;
+    struct mmap_file *mf = NULL;
+    if (mapping == NULL){
+        return false;
+     }
+    for(e = list_begin(&cur->mmap_list); e != list_end(&cur->mmap_list); e = list_next(e)){
+        struct mmap_file *temp = list_entry(e, struct mmap_file, elem);
+        if(temp->mapid == mapping){
+            mf = temp;
+            break;
+        }
+    }
+    if(mf == NULL){
+        return false;
+    }
+    lock_acquire(&filesys_lock);
+    int offset = 0;
+    while (offset < mf->length) {
+        int read_bytes = mf->length - offset < PGSIZE ? mf->length - offset : PGSIZE;
+
+        struct sup_page_entry *spte = sup_page_lookup(mf->addr + offset);
+        ASSERT(spte != NULL);
+        if (spte != NULL) {
+            if(spte->status == FRAME){
+                ASSERT(spte->kpage != NULL);
+                frame_set_pinned(spte->kpage, true);
+            }
+            if(spte->status == FRAME || spte->status == SWAP){
+                //bool is_dirty = spte->
+                //bool is_dirty = 
+                bool is_dirty = pagedir_is_dirty(cur->pagedir, spte->upage);
+                if (is_dirty) {
+                    file_write_at(spte->file, spte->upage, read_bytes, spte->ofs);
+                }
+                //frame_free(spte->kpage);
+                if(spte->status == FRAME){
+                    free_frame_from_kpage(spte->kpage);
+                    pagedir_clear_page(cur->pagedir, spte->upage);
+                }
+                if(spte->status == SWAP)
+                    swap_free(spte);
+                //pagedir_clear_page(cur->pagedir, spte->upage);
+
+            }
+            // else if(spte->status == SWAP){
+            //     //bool is_dirty = spte->dirty;
+            //     bool is_dirty = pagedir_is_dirty(cur->pagedir, spte->upage);
+            //     if (is_dirty) {
+            //         // void *tmp_page = palloc_get_page(0); // in the kernel
+            //         // swap_in (spte->sector, tmp_page);
+            //         file_write_at (spte->file, tmp_page, PGSIZE, offset);
+            //         // palloc_free_page(tmp_page);
+            //      }
+            // }
+            // if (pagedir_is_dirty(cur->pagedir, spte->upage)) {
+            //     //lock_acquire(&filesys_lock);
+            //     file_write_at(spte->file, spte->upage, spte->read_bytes, spte->ofs);
+            //     //lock_release(&filesys_lock);
+            // }
+            else if (spte->status == FILE) {
+
+            }
+            else{
+                ASSERT(false);
+            }
+            sup_page_delete(cur->pagedir, spte);
+        }
+        offset += read_bytes;
+    }
+    list_remove(&mf->elem);
+    file_close(mf->file);
+    free(mf);
+    lock_release(&filesys_lock);
+    return true;
+}
+
+static syscall_mmap(struct intr_frame* f){
+    pointer_checker(f->esp + 1, sizeof(int), 0);
+    pointer_checker(f->esp + 2, sizeof(void*), 0);
+    int fd = *(int*)(f->esp + sizeof(void*));
+    void *addr = *(void**)(f->esp + 2 * sizeof(void*));
+    f->eax = sys_mmap(fd, addr);
+}
+
+static syscall_munmap(struct intr_frame* f){
+    pointer_checker(f->esp + 1, sizeof(int), 0);
+    int mapping = *(int*)(f->esp + sizeof(void*));
+    f->eax = munmap(mapping);
 }
 
 static void (*syscalls[N_SYSCALLS])(struct intr_frame *);
 
 void syscall_init(void) {
     intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
-    list_init(&mmap_list);
     lock_init(&filesys_lock);
     lock_init(&filesys_lock2);
     syscalls[SYS_EXEC] = &syscall_exec;
@@ -264,6 +381,8 @@ void syscall_init(void) {
     syscalls[SYS_SEEK] = &syscall_seek;
     syscalls[SYS_TELL] = &syscall_tell;
     syscalls[SYS_CLOSE] = &syscall_close;
+    syscalls[SYS_MMAP] = &syscall_mmap;
+    syscalls[SYS_MUNMAP] = &syscall_munmap;
 
 }
 
@@ -272,7 +391,7 @@ static void syscall_handler(struct intr_frame* f UNUSED) {
     pointer_checker(f->esp, sizeof(int), 0);
     int syscall_n = *(int*)f->esp;
     //printf("system call! %d", syscall_n);
-
+    thread_current()-> current_esp = f->esp;
     if(syscall_n < 0 || syscall_n >= N_SYSCALLS) {
         thread_current()->exit_code = -1;
         thread_exit();

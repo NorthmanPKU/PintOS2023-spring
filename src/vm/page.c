@@ -12,6 +12,7 @@
 #include <string.h>
 #include "lib/kernel/hash.h"
 #include "devices/block.h"
+#include "threads/interrupt.h"
 struct lock sup_page_lock;
 struct lock page_file_lock;
 struct sup_page_entry *sup_page_alloc (void *upage, bool writable){ //including insert into hash table
@@ -32,6 +33,30 @@ struct sup_page_entry *sup_page_alloc (void *upage, bool writable){ //including 
         ASSERT(false);
         return NULL;
     }
+    return sup_page_entry;
+}
+
+struct sup_page_entry *sup_zero_page_alloc(void *upage, bool writable){
+    struct sup_page_entry *sup_page_entry = malloc(sizeof(struct sup_page_entry));
+    sup_page_entry->upage = upage;
+    sup_page_entry->kpage = NULL;
+    sup_page_entry->writable = writable;
+    sup_page_entry->file = NULL;
+    sup_page_entry->frame_entry = NULL;
+    sup_page_entry->ofs = 0;
+    sup_page_entry->read_bytes = 0;
+    sup_page_entry->zero_bytes = PGSIZE;
+    sup_page_entry->loaded = true;
+    sup_page_entry->pinned = false;
+    sup_page_entry->thread = thread_current();
+    sup_page_entry->sector = (block_sector_t) -1;
+    sup_page_entry->status = ZERO;
+    if(!sup_page_insert(&thread_current()->sup_page_table, sup_page_entry)){
+        free(sup_page_entry);
+        ASSERT(false);
+        return NULL;
+    }
+
     return sup_page_entry;
 }
 
@@ -62,6 +87,10 @@ struct sup_page_entry *sup_page_lookup (void *upage){
         #endif
         return hash_entry (e, struct sup_page_entry, hash_elem);
     }
+}
+
+bool sup_page_exists (void *upage){
+    return sup_page_lookup(upage) != NULL;
 }
 
 void sup_page_table_init (){//struct hash *sup_page_table){
@@ -98,10 +127,18 @@ bool install_page (void *upage, void *kpage, bool writable){
     
 }
 bool load_page (void *upage){
+    //enum intr_level old_level = intr_disable();
+    //printf("The thread gonna acquire the lock is %d\n", thread_current()->tid);
+    if(lock_held_by_current_thread(&sup_page_lock)){
+        lock_release(&sup_page_lock);
+    }
+    //printf("The thread gonna acquire the lock is %d\n", thread_current()->tid); 
     lock_acquire(&sup_page_lock);
+    //intr_set_level(old_level);
     //lock_acquire(&page_file_lock);
     struct sup_page_entry *sup_page_entry = sup_page_lookup(upage);
     if(sup_page_entry == NULL){
+        //printf("140: the thread %d release the lock\n", thread_current()->tid);
         lock_release(&sup_page_lock);
         //lock_release(&page_file_lock);
 
@@ -119,6 +156,7 @@ bool load_page (void *upage){
     struct frame_entry* frame = get_frame();
     sup_page_entry->frame_entry = frame;
     if(frame == NULL){
+        //printf("157: the thread %d release the lock\n", thread_current()->tid);
         lock_release(&sup_page_lock);
         //lock_release(&page_file_lock);
         return false;
@@ -146,12 +184,15 @@ bool load_page (void *upage){
     //memset(frame + sup_page_entry->read_bytes, 0, sup_page_entry->zero_bytes);
     if(!install_page(sup_page_entry->upage, frame->frame, sup_page_entry->writable)){
         //frame_free(frame);
+        //printf("185: the thread %d release the lock\n", thread_current()->tid);
         lock_release(&sup_page_lock);
         return false;
     }
     //sup_page_entry->loaded = true;
-
+ 
     //lock_release(&page_file_lock);
+    sup_page_entry->status = FRAME;
+    //printf("193: the thread %d release the lock\n", thread_current()->tid);
     lock_release(&sup_page_lock);
 
     return true;
@@ -171,7 +212,18 @@ bool page_out (struct sup_page_entry *p){
 
   dirty = pagedir_is_dirty (p->thread->pagedir, (const void *) p->upage);
 
+//   if(!dirty){
+//     ok = true;
+//   }
+//   if(p->file == NULL) ok = swap_out(p);
+//   else{
+//     if(dirty){
+        
+//     }
+
+//   }
     bool k = swap_out(p);
+    p->status = SWAP;
   if(ok){
     p->frame_entry->page = NULL;
     p->frame_entry = NULL;

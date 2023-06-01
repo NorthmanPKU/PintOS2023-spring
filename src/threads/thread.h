@@ -139,6 +139,8 @@ struct thread {
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t* pagedir; /**< Page directory. */
+
+    uint8_t *current_esp;
 #endif
 #ifdef VM
     struct hash sup_page_table; /**< Supplemental page table. */

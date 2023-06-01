@@ -10,6 +10,7 @@
 
 /** Number of page faults processed. */
 static long long page_fault_cnt;
+#define STACK_MAX (1 << 23)
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
@@ -165,7 +166,24 @@ page_fault (struct intr_frame *f)
    #endif
    //print all three flags
    //printf("not_present = %d, write = %d, user = %d, fault_addr = %p\n", not_present, write, user, fault_addr);
-   if (not_present && (user||fault_addr < PHYS_BASE)){
+   //stack growth
+   void* esp = user ? f->esp : thread_current()->current_esp;
+   bool on_stack_frame = (f->esp <= fault_addr || fault_addr == f->esp - 4 || fault_addr == f->esp - 32);
+   bool ok_stack_addr = (fault_addr >= PHYS_BASE - STACK_MAX)&& (fault_addr < PHYS_BASE);
+   void* fault_page = pg_round_down(fault_addr);
+   if(on_stack_frame && ok_stack_addr){
+      //printf("stack growth\n");
+      if(!sup_page_exists(fault_page)){
+         //printf("stack growth\n");
+         sup_zero_page_alloc(fault_page, true);
+      }
+      
+   }
+   if(!not_present){
+      goto DEAL;
+   }
+ 
+   //if (not_present && (user||fault_addr < PHYS_BASE)){
       //load page from supplemental page table、
       // if (fault_addr == NULL || !is_user_vaddr(fault_addr)) { 
       //    f->eip = (void (*) (void)) f->eax;
@@ -180,8 +198,9 @@ page_fault (struct intr_frame *f)
       // }
       // return; 
       if(success) return;
-   }
+   //}
    #endif
+   DEAL:
    if (!user) {
     f->eip = (void (*) (void)) f->eax;
     f->eax = -1;

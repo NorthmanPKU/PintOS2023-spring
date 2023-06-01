@@ -58,3 +58,12 @@ bool swap_out (struct sup_page_entry *p){
     p->read_bytes = 0;
     return true;
 }
+
+bool swap_free (struct sup_page_entry *p){
+    lock_acquire(&swap_lock);
+    lock_acquire(&bitmap_lock);
+    bitmap_reset(swap_bitmap, p->sector / SECTORS_PER_PAGE);
+    lock_release(&bitmap_lock);
+    lock_release(&swap_lock);
+    return true;
+}

@@ -15,6 +15,7 @@
 #define FRAME 0
 #define SWAP 1
 #define FILE 2
+#define ZERO 3
 
 
 
@@ -33,13 +34,16 @@ struct sup_page_entry{
     bool pinned; /* Page is pinned */
     struct thread *thread; /* Thread that owns the page */
     block_sector_t sector; /* Sector number in swap */
+    int status; /* Status of the page */
     struct hash_elem hash_elem; /* Hash element */
 };
 
 struct sup_page_entry *sup_page_alloc (void *upage, bool writable);
+struct sup_page_entry *sup_zero_page_alloc(void *upage, bool writable);
 bool sup_page_less (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED);
 unsigned sup_page_hash (const struct hash_elem *p_, void *aux UNUSED);
 struct sup_page_entry *sup_page_lookup (void *upage);
+bool sup_page_exists (void *upage);
 void sup_page_table_init (void);
 //void sup_page_table_init (struct hash *sup_page_table);
 bool sup_page_insert (struct hash *sup_page_table, struct sup_page_entry *sup_page_entry);

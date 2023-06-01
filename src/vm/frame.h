@@ -20,6 +20,7 @@ void frame_table_init (void);
 //struct frame_entry* get_frame(struct sup_page_entry *page);
 struct frame_entry* get_frame(void);
 void frame_free (struct frame_entry *frame_entry);
-
+void free_frame_from_kpage(void *kpage);
 struct frame_entry* evict_frame(void);
+void frame_set_pinned(void *kpage, bool new_value);
 #endif /* vm/frame.h */

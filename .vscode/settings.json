@@ -4,6 +4,8 @@
     "files.associations": {
         "syscall.h": "c",
         "*.inc": "c",
-        "init.h": "c"
+        "init.h": "c",
+        "lib.h": "c",
+        "main.h": "c"
     }
 }

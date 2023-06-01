@@ -138,6 +138,8 @@ struct frame_entry* evict_frame(void){
     for (int i = 0; i < frame_cnt * 2; i++) {
       hand = (hand + 1) % frame_cnt;
       struct frame_entry* f = &frames[hand];
+      if(f->pinned)
+        continue;
       if (lock_try_acquire(&f->frame_lock)) {
         if (f->page == NULL) {
           result = f;
@@ -166,4 +168,26 @@ void frame_free (struct frame_entry *frame_entry){
     frame_entry->page = NULL;
     lock_release(&lock_for_scan);
 }
-    
+
+void free_frame_from_kpage(void *kpage){
+    lock_acquire(&lock_for_scan);
+    for(int i = 0; i < frame_cnt; i++){
+        if(frames[i].frame == kpage){
+            frames[i].page = NULL;
+            lock_release(&lock_for_scan);
+            return;
+        }
+    }
+    lock_release(&lock_for_scan);
+}
+
+void frame_set_pinned(void *kpage, bool new_value){
+    lock_acquire(&lock_for_scan);
+    for(int i = 0; i < frame_cnt; i++){
+        if(frames[i].frame == kpage){
+            frames[i].pinned = new_value;
+            break;
+        }
+    }
+    lock_release(&lock_for_scan);
+}
