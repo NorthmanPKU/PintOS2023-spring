@@ -23,7 +23,7 @@ static struct frame_entry* frames;
 static size_t frame_cnt = 0;
 struct lock lock_for_scan;  
 static size_t hand;
-
+ 
 void frame_table_init (void){
     frames = (struct frame_entry *)malloc(sizeof (*frames) * init_ram_pages);
     if (frames == NULL)
@@ -36,10 +36,10 @@ void frame_table_init (void){
         f->page = NULL;
         lock_init(&f->frame_lock);
         #ifdef DEBUG_EVICT
-        if(frame_cnt == 267){
-            printf("frame_cnt: %d\n", frame_cnt);
-            printf("f->frame: %p, f->pinned: %d, f->page: %p\n", f->frame, f->pinned, f->page);
-        }
+        // if(frame_cnt == 267){
+        //     printf("frame_cnt: %d\n", frame_cnt);
+        //     printf("f->frame: %p, f->pinned: %d, f->page: %p\n", f->frame, f->pinned, f->page);
+        // }
         #endif
         frame_cnt++;
     }

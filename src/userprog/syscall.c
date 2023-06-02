@@ -176,7 +176,7 @@ static void syscall_read(struct intr_frame* f) {
         }  
         else {
             printf("stdin\n");
-            size_t i;
+            size_t i; 
             for(i = 0; i < read_amt; i++){
                 char c = input_getc();
                 if(!lock_page(buf, true)){
