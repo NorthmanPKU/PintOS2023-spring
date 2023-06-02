@@ -105,9 +105,9 @@ bool sup_page_insert (struct hash *sup_page_table, struct sup_page_entry *sup_pa
     return e == NULL; //return true if insert success
 }
 bool sup_page_delete (struct hash *sup_page_table, struct sup_page_entry *sup_page_entry){
-    lock_acquire(&sup_page_lock);
+    //lock_acquire(&sup_page_lock);
     struct hash_elem *e = hash_delete(sup_page_table, &sup_page_entry->hash_elem);
-    lock_release(&sup_page_lock);
+    //lock_release(&sup_page_lock);
     return e != NULL;  
 }
 // void sup_page_table_destroy (struct hash *sup_page_table){
@@ -126,7 +126,10 @@ bool install_page (void *upage, void *kpage, bool writable){
     return pagedir_set_page(t->pagedir, upage, kpage, writable);
     
 }
-bool load_page (void *upage){
+bool load_page (void *upage){ 
+    // if(lock_held_by_current_thread(&filesys_lock)){
+    //     PANIC("load_page: filesys_lock is held by current thread\n");
+    // }
     //enum intr_level old_level = intr_disable();
     //printf("The thread gonna acquire the lock is %d\n", thread_current()->tid);
     // if(lock_held_by_current_thread(&sup_page_lock)){
@@ -169,10 +172,19 @@ bool load_page (void *upage){
     //frame->page = sup_page_entry;
     //lock_release(&sup_page_entry->frame_entry->frame_lock);
     if(sup_page_entry->sector != (block_sector_t) -1){
+
         swap_in(sup_page_entry);
     }
     else if(sup_page_entry->file != NULL){
+        enum intr_level old_level = intr_disable();
+        if(lock_held_by_current_thread(&filesys_lock)){
+            lock_release(&filesys_lock);
+        }
+        lock_acquire(&filesys_lock);
+        intr_set_level(old_level);
+        
         size_t bytes_read = file_read_at(sup_page_entry->file, frame->frame, sup_page_entry->read_bytes, sup_page_entry->ofs);
+        lock_release(&filesys_lock);
         memset(frame->frame + sup_page_entry->read_bytes, 0, PGSIZE - sup_page_entry->read_bytes);
         if(bytes_read != sup_page_entry->read_bytes){
             printf("bytes_read: %d, read_bytes: %d\n", bytes_read, sup_page_entry->read_bytes);
@@ -222,7 +234,9 @@ static bool do_load_page(struct sup_page_entry *p){
         swap_in(p);
     }
     else if(p->file != NULL){
+        lock_acquire(&filesys_lock);
         size_t bytes_read = file_read_at(p->file, p->frame_entry->frame, p->read_bytes, p->ofs);
+        lock_release(&filesys_lock);
         memset(p->frame_entry->frame + bytes_read, 0, PGSIZE - bytes_read);
         if(bytes_read != p->read_bytes){
             printf("bytes_read: %d, read_bytes: %d\n", bytes_read, p->read_bytes);
@@ -278,7 +292,10 @@ void page_destroy (struct hash_elem *e, void *aux UNUSED){
 
 void page_free (struct sup_page_entry *p){
     pagedir_clear_page(p->thread->pagedir, (void *) p->upage);
+   //printf("p->frame_entry: %p, p->upage: %p, p->frame_entry->page->upage: %p\n", p->frame_entry, p->upage, p->frame_entry->page->upage);
+   //printf("p->upage: %p\n", p->upage);
     if(p->frame_entry != NULL){
+        //printf("------------------I'm here in 290!-------------------\n");
         p->frame_entry->page = NULL;
         p->frame_entry = NULL;
     }

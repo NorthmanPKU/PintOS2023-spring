@@ -146,9 +146,28 @@ static void syscall_read(struct intr_frame* f) {
             //     fail = 1;
             //     //thread_exit();
             // }
+            //enum intr_level old_level = intr_disable();
+            // if(lock_held_by_current_thread(&filesys_lock)){
+            //     printf("%d: I already have it so i'm releasing it\n", thread_current()->tid);
+            //     lock_release(&filesys_lock);
+            // } 
             lock_acquire(&filesys_lock);
+            // printf("%d: just acquired lock\n", thread_current()->tid);
+            //intr_set_level(old_level);
+            // printf("%d: just set intr level\n", thread_current()->tid);
+            // if(lock_held_by_current_thread(&filesys_lock)){
+            //     printf("%d: lock held by current thread\n", thread_current()->tid);
+            // }
+            //lock_acquire(&filesys_lock);
             return_value = file_read(tf->file, buf, read_amt);
+            // if(lock_held_by_current_thread(&filesys_lock)){
+            //     printf("%d: lock held by current thread-2\n", thread_current()->tid);
+            // }
+            if(!lock_held_by_current_thread(&filesys_lock)){
+                lock_acquire(&filesys_lock);
+            }
             lock_release(&filesys_lock);
+            // printf("%d: just released lock\n", thread_current()->tid);
             // unlock_page(buf);
             // if(fail){
             //     f->eax = -1; //TODO: check if this is correct
@@ -291,8 +310,8 @@ static void syscall_close(struct intr_frame* f) {
     }
     lock_acquire(&filesys_lock);
     file_close(tf->file);
-    lock_release(&filesys_lock);
     list_remove(&tf->elem);
+    lock_release(&filesys_lock);
     free(tf);
 }
 
@@ -311,6 +330,7 @@ static mapid_t sys_mmap(int fd, void *addr){
     struct thread_file *file_d = get_thread_file(fd);
     struct file *file = NULL;
     if(file_d && file_d->file){
+
         file = file_reopen(file_d->file);
     }
     // if (file_d == NULL) {
@@ -412,7 +432,9 @@ bool munmap(mapid_t mapping){
                 //bool is_dirty = 
                 bool is_dirty = pagedir_is_dirty(cur->pagedir, spte->upage);
                 if (is_dirty) {
+                    
                     file_write_at(spte->file, spte->upage, read_bytes, spte->ofs);
+                    
                 }
                 //frame_free(spte->kpage);
                 if(spte->status == FRAME){
@@ -446,7 +468,12 @@ bool munmap(mapid_t mapping){
                 ASSERT(false);
             }
             //sup_page_delete(cur->pagedir, spte);
+            lock_acquire(&sup_page_lock);
+            lock_acquire(&lock_for_scan);
             sup_page_delete(&cur->sup_page_table, spte);
+            page_free(spte);
+            lock_release(&lock_for_scan);
+            lock_release(&sup_page_lock);
         }
         offset += read_bytes;
     }

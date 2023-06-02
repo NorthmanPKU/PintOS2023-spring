@@ -31,13 +31,19 @@ void frame_table_init (void){
     void* p;
     while(p = palloc_get_page(PAL_USER)){
         struct frame_entry* f = &frames[frame_cnt];
-        f->frame = p;
+        f->frame = p; 
         f->pinned = false;
         f->page = NULL;
         lock_init(&f->frame_lock);
+        #ifdef DEBUG_EVICT
+        if(frame_cnt == 267){
+            printf("frame_cnt: %d\n", frame_cnt);
+            printf("f->frame: %p, f->pinned: %d, f->page: %p\n", f->frame, f->pinned, f->page);
+        }
+        #endif
         frame_cnt++;
     }
-    #ifdef DEBUG
+    #ifdef DEBUG_EVICT
     printf("Frame init finsh! frame_cnt: %d\n", frame_cnt);
     #endif
     hand = 0;
@@ -92,6 +98,13 @@ struct frame_entry* get_frame(struct sup_page_entry *page){
         if(lock_try_acquire(&f->frame_lock)){
             if(f->page == NULL){
                 f->page = page;
+                #ifdef DEBUG_EVICT
+                if(i == 267){
+                    printf("!!!!!!!!!!!!!!!!!!!!!frame_cnt: %d !!!!!!!!!!!!!!!!!!!!!\n", i);
+                    printf("f->frame: %p, f->pinned: %d, f->page: %p\n", f->frame, f->pinned, f->page);
+                    printf("f->page->thread->pgdir: %p, f->page->upage: %p\n", f->page->thread->pagedir, f->page->upage);
+                }
+                #endif
                 lock_release(&lock_for_scan);
                 
                 return f;
@@ -160,6 +173,10 @@ struct frame_entry* evict_frame(void){
           result = f;
           break;
         }
+        #ifdef DEBUG_EVICT
+        //printf("f->page->thread->pagedir: %p, f->page->upage: %p\n", f->page->thread->pagedir, f->page->upage);
+        //printf("f->page->thread: %p\n", f->page->thread);
+        #endif
         bool accessed = pagedir_is_accessed(f->page->thread->pagedir, f->page->upage);
         if(accessed) pagedir_set_accessed(f->page->thread->pagedir, f->page->upage, false);
 
@@ -187,7 +204,9 @@ struct frame_entry* evict_frame(void){
         lock_release(&f->frame_lock);
       }
       else {
+        #ifdef DEBUG_EVICT
         printf("frame %d is locked!\n", hand);
+        #endif
        }
     }
     if(result == NULL){

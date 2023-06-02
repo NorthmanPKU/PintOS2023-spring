@@ -11,7 +11,7 @@
 #include "filesys/off_t.h"
 #include "vm/frame.h"
 #include "devices/block.h"
-
+extern struct lock filesys_lock;
 #define FRAME 0
 #define SWAP 1
 #define FILE 2

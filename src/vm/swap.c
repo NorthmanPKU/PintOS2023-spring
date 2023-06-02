@@ -17,6 +17,8 @@ static struct lock swap_lock; //swap lock, used to protect swap device
 static struct lock bitmap_lock; //bitmap lock, used to protect swap bitmap
 
 void swap_init(void){
+    if(lock_held_by_current_thread(&swap_lock))
+        PANIC("");
     swap_device = block_get_role(BLOCK_SWAP);
     if(swap_device == NULL)
         PANIC("No swap device");
@@ -29,6 +31,9 @@ void swap_init(void){
 }
 
 void swap_in (struct sup_page_entry *p){
+    // if(lock_held_by_current_thread(&filesys_lock))
+    //     PANIC("");
+    //lock_acquire(&filesys_lock);
     lock_acquire(&swap_lock);
     size_t i;
     for(i = 0; i < SECTORS_PER_PAGE; i++)
@@ -38,9 +43,14 @@ void swap_in (struct sup_page_entry *p){
     lock_release(&bitmap_lock);
     p->sector = (block_sector_t) -1;
     lock_release(&swap_lock);
+    //lock_release(&filesys_lock);
 }
 
 bool swap_out (struct sup_page_entry *p){
+
+    // if(lock_held_by_current_thread(&filesys_lock))
+    //     PANIC("");
+    //lock_acquire(&filesys_lock);
     lock_acquire(&swap_lock);
     lock_acquire(&bitmap_lock);
     size_t i = bitmap_scan_and_flip(swap_bitmap, 0, 1, false);
@@ -52,6 +62,7 @@ bool swap_out (struct sup_page_entry *p){
     for(j = 0; j < SECTORS_PER_PAGE; j++)
         block_write(swap_device, i * SECTORS_PER_PAGE + j, p->frame_entry->frame + j * BLOCK_SECTOR_SIZE);
     lock_release(&swap_lock);
+    //lock_release(&filesys_lock);
 
     p->file = NULL; //TODO: are these three OK?
     p->ofs = 0;
@@ -60,6 +71,8 @@ bool swap_out (struct sup_page_entry *p){
 }
 
 bool swap_free (struct sup_page_entry *p){
+    if(lock_held_by_current_thread(&filesys_lock))
+        PANIC("");
     lock_acquire(&swap_lock);
     lock_acquire(&bitmap_lock);
     bitmap_reset(swap_bitmap, p->sector / SECTORS_PER_PAGE);

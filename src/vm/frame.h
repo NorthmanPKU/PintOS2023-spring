@@ -8,7 +8,7 @@
 #include <string.h>
 #include "lib/kernel/hash.h"
 #include "vm/page.h"
-
+extern struct lock filesys_lock;
 struct frame_entry{
     struct lock frame_lock; /* Lock for frame */
     void* frame; /* Frame */

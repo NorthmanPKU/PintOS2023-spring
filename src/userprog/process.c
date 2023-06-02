@@ -222,14 +222,18 @@ void process_exit(void) {
     enum intr_level old_level = intr_disable();
     if(lock_held_by_current_thread(&filesys_lock))
         lock_release(&filesys_lock);
+    
     lock_acquire(&filesys_lock);
+    intr_set_level(old_level);
+    
     file_close(cur->executable_file);
     lock_release(&filesys_lock);
-    intr_set_level(old_level);
     #ifdef VM
     
     if(lock_held_by_current_thread(&sup_page_lock))
         lock_release(&sup_page_lock);
+
+    
 
 
     //munmap
@@ -241,14 +245,16 @@ void process_exit(void) {
         ASSERT(munmap(mmap_f->mapid) == true);
     }
     #endif
-
+    //printf("+++++++++++++++%d (%p) is destroying sup_page_table!+++++++++++++++\n", cur->tid, cur);
     lock_acquire(&sup_page_lock);
     lock_acquire(&lock_for_scan);
     hash_destroy(&cur->sup_page_table, page_destroy);
     lock_release(&lock_for_scan);
     lock_release(&sup_page_lock);
+    //printf("+++++++++++++++%d (%p) has destroyed sup_page_table!+++++++++++++++\n", cur->tid, cur);
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
+    
     pd = cur->pagedir;
     if (pd != NULL) {
         /* Correct ordering here is crucial.  We must set
@@ -594,7 +600,11 @@ static bool load_segment(struct file* file,
         // sup_page_entry_->swap = false;
         // sup_page_entry_->swap_index = 0;
         //if(page_read_bytes > 0){
+            // if(lock_held_by_current_thread(&filesys_lock))
+            //     PANIC("filesys_lock is held by current thread");
+            //lock_acquire(&filesys_lock);
             sup_page_entry_->file = file_reopen(file);
+            //lock_release(&filesys_lock);
             sup_page_entry_->ofs = ofs;
             sup_page_entry_->read_bytes = page_read_bytes;
         //}

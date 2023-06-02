@@ -2,7 +2,8 @@
 #define USERPROG_SYSCALL_H
 #include "threads/interrupt.h" // for intr_frame
 #include <list.h>
-
+extern struct lock sup_page_lock;
+extern struct lock lock_for_scan;
 typedef uint32_t mapid_t;
 struct mmap_file {
     mapid_t mapid;
