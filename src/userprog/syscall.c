@@ -104,28 +104,86 @@ static void syscall_read(struct intr_frame* f) {
   pointer_checker(*((unsigned*)f->esp + 2), *((unsigned*)f->esp + 3), 2);
   pointer_checker(f->esp + 3, sizeof(int), 0);
     int fd = *(int*)(f->esp + sizeof(void*));
-    char* buf = *(char**)(f->esp + 2 * sizeof(void*));
+    char* buf_ = *(char**)(f->esp + 2 * sizeof(void*));
     int size = *(int*)(f->esp + 3 * sizeof(void*));
 
+    char *buf = buf_;
     //printf("fd: %d, buf: %s, size: %d\n", fd, buf, size);
+    // if (fd == 0) {
+    //     int i;
+    //     for (i = 0; i < size; i++) {
+    //         buf[i] = input_getc();
+    //     }
+    //     f->eax = size;
+    // } else {
 
-    if (fd == 0) {
-        int i;
-        for (i = 0; i < size; i++) {
-            buf[i] = input_getc();
-        }
-        f->eax = size;
-    } else {
+    //     struct thread_file *tf = get_thread_file(fd);
+    //     if (tf == NULL) {
+    //         f->eax = -1;
+    //         return;
+    //     } 
+    //     lock_acquire(&filesys_lock);
+    //     f->eax = file_read(tf->file, buf, size);
+    //     lock_release(&filesys_lock);
+    // }
 
-        struct thread_file *tf = get_thread_file(fd);
-        if (tf == NULL) {
-            f->eax = -1;
-            return;
-        }
-        lock_acquire(&filesys_lock);
-        f->eax = file_read(tf->file, buf, size);
-        lock_release(&filesys_lock);
+    int read_bytes = 0;
+    int size_ = size;
+    struct thread_file *tf = get_thread_file(fd);
+    if(tf == NULL){
+        f->eax = -1;
+        return;
     }
+    while(size_ > 0){
+        size_t page_left = PGSIZE - pg_ofs(buf);
+        size_t read_amt = size_ < page_left ? size_ : page_left;
+        off_t return_value;
+        //check buf
+
+        if(fd != STDIN_FILENO){
+            bool fail = 0;
+            // if(!lock_page(buf, true)){ 
+            //     fail = 1;
+            //     //thread_exit();
+            // }
+            lock_acquire(&filesys_lock);
+            return_value = file_read(tf->file, buf, read_amt);
+            lock_release(&filesys_lock);
+            // unlock_page(buf);
+            // if(fail){
+            //     f->eax = -1; //TODO: check if this is correct
+            //     return;
+            // }
+        }  
+        else {
+            printf("stdin\n");
+            size_t i;
+            for(i = 0; i < read_amt; i++){
+                char c = input_getc();
+                if(!lock_page(buf, true)){
+                    thread_exit();
+                }
+                buf[i] = c;
+                unlock_page(buf);
+            }
+            read_bytes = read_amt;
+         }
+         if(return_value < 0){
+            if(read_bytes == 0){
+                read_bytes = -1;
+            }
+            break;
+         }
+         read_bytes += return_value;
+         if(return_value != (off_t)read_amt){
+            break;
+         }
+
+        size_ -= return_value;
+        buf += return_value;
+
+    }
+    f->eax = read_bytes;
 }
 static void syscall_write(struct intr_frame* f) {
     pointer_checker(f->esp + 1, sizeof(int), 0);
@@ -133,7 +191,7 @@ static void syscall_write(struct intr_frame* f) {
     pointer_checker(*((unsigned*)f->esp + 2), *((unsigned*)f->esp + 3), 2);
     pointer_checker(f->esp + 3, sizeof(int), 0);
     int fd = *(int*)(f->esp + sizeof(void*));
-    char* buf = *(char**)(f->esp + 2 * sizeof(void*));
+    char* buf_ = *(char**)(f->esp + 2 * sizeof(void*));
     int size = *(int*)(f->esp + 3 * sizeof(void*));
 
     //printf("fd: %d, buf: %s, size: %d\n", fd, buf, size);
@@ -153,6 +211,7 @@ static void syscall_write(struct intr_frame* f) {
     //     // lock_release(&filesys_lock);
         
     // }
+    char *buf = buf_;
     int size_ = size;
     struct thread_file *tf;
     int written_bytes = 0;
@@ -166,7 +225,7 @@ static void syscall_write(struct intr_frame* f) {
     }
     while(size_ > 0){
         size_t page_left = PGSIZE - pg_ofs(buf);
-        size_t write_amt = size_ < page_left ? size : page_left;
+        size_t write_amt = size_ < page_left ? size_ : page_left; //TODO: size_之前写成了size
         off_t return_value;
 
         if(!lock_page(buf, false)){
@@ -307,8 +366,8 @@ static mapid_t sys_mmap(int fd, void *addr){
         struct mmap_file *last = list_entry(e, struct mmap_file, elem);
         mf->mapid = last->mapid + 1;
     }
-    mf->fd = cur->next_fd;
-    cur->next_fd++;
+    mf->fd = cur->next_fd - 1;
+    //cur->next_fd++; //TODO: check if this is correct
     mf->file = file;
     mf->addr = addr;
     mf->length = offset;
@@ -386,7 +445,8 @@ bool munmap(mapid_t mapping){
             else{
                 ASSERT(false);
             }
-            sup_page_delete(cur->pagedir, spte);
+            //sup_page_delete(cur->pagedir, spte);
+            sup_page_delete(&cur->sup_page_table, spte);
         }
         offset += read_bytes;
     }

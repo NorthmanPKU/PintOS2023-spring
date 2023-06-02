@@ -231,11 +231,6 @@ void process_exit(void) {
     if(lock_held_by_current_thread(&sup_page_lock))
         lock_release(&sup_page_lock);
 
-    lock_acquire(&sup_page_lock);
-    lock_acquire(&lock_for_scan);
-    hash_destroy(&cur->sup_page_table, page_destroy);
-    lock_release(&lock_for_scan);
-    lock_release(&sup_page_lock);
 
     //munmap
     struct list *mmap_l = &cur->mmap_list;
@@ -247,6 +242,11 @@ void process_exit(void) {
     }
     #endif
 
+    lock_acquire(&sup_page_lock);
+    lock_acquire(&lock_for_scan);
+    hash_destroy(&cur->sup_page_table, page_destroy);
+    lock_release(&lock_for_scan);
+    lock_release(&sup_page_lock);
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
     pd = cur->pagedir;

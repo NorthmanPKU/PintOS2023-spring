@@ -208,13 +208,13 @@ HAVE_FRAME:
 
 static bool do_load_page(struct sup_page_entry *p){
     struct frame_entry* frame = get_frame(p);
-    p->frame_entry = frame;
     if(frame == NULL){
         //printf("157: the thread %d release the lock\n", thread_current()->tid);
         //lock_release(&sup_page_lock);
         //lock_release(&page_file_lock);
         return false;
     }
+    p->frame_entry = frame;
     //sup_page_entry->frame_entry = frame;
     //frame->page = sup_page_entry;
     //lock_release(&sup_page_entry->frame_entry->frame_lock);
@@ -226,7 +226,7 @@ static bool do_load_page(struct sup_page_entry *p){
         memset(p->frame_entry->frame + bytes_read, 0, PGSIZE - bytes_read);
         if(bytes_read != p->read_bytes){
             printf("bytes_read: %d, read_bytes: %d\n", bytes_read, p->read_bytes);
-        }
+        } 
     }
     else{
         memset(frame->frame, 0, PGSIZE);
@@ -246,7 +246,7 @@ bool page_out (struct sup_page_entry *p){
   bool ok = false;
 
   ASSERT (p->frame_entry != NULL);
-  ASSERT (lock_held_by_current_thread (&sup_page_lock));
+  ASSERT (lock_held_by_current_thread (&p->frame_entry->frame_lock));
 
   pagedir_clear_page(p->thread->pagedir, (void *) p->upage);
 
@@ -292,7 +292,7 @@ bool lock_page(void* addr, bool plan2write){
     }
     lock_frame(p);
     if(p->frame_entry == NULL) {
-        return do_load_page(addr)&&pagedir_set_page(thread_current()->pagedir, p->upage, p->frame_entry->frame, p->writable);
+        return do_load_page(p)&&pagedir_set_page(thread_current()->pagedir, p->upage, p->frame_entry->frame, p->writable);
     }
     else {
         return true;
@@ -306,5 +306,5 @@ bool unlock_page(void* addr){
         return false;
     }
     unlock_frame(p->frame_entry);
-    return true;
+    return true; 
 }
