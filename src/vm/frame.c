@@ -17,9 +17,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+//#define DEBUG_EVICT
+
 static struct frame_entry* frames;
 static size_t frame_cnt = 0;
-struct lock lock_for_scan;
+struct lock lock_for_scan;  
 static size_t hand;
 
 void frame_table_init (void){
@@ -135,13 +137,26 @@ struct frame_entry* get_frame(struct sup_page_entry *page){
 // }
 struct frame_entry* evict_frame(void){
     struct frame_entry *result = NULL;
+    #ifdef DEBUG_EVICT
+    printf("****************Start first cycle!****************\n");
+    #endif
     for (int i = 0; i < frame_cnt * 2; i++) {
+        #ifdef DEBUG_EVICT
+        if(i == frame_cnt) printf("****************Start second cycle!****************\n");
+        #endif
       hand = (hand + 1) % frame_cnt;
       struct frame_entry* f = &frames[hand];
-      if(f->pinned)
+      if(f->pinned){
+        #ifdef DEBUG_EVICT    
+        printf("frame %d is pinned!\n", hand);
+        #endif
         continue;
+        }
       if (lock_try_acquire(&f->frame_lock)) {
         if (f->page == NULL) {
+            #ifdef DEBUG_EVICT
+            printf("frame %d is empty!\n", hand);
+            #endif
           result = f;
           break;
         }
@@ -149,16 +164,34 @@ struct frame_entry* evict_frame(void){
         if(accessed) pagedir_set_accessed(f->page->thread->pagedir, f->page->upage, false);
 
         if (accessed) {
+            #ifdef DEBUG_EVICT
+            printf("frame %d has been accessed!\n", hand);
+            #endif
           lock_release(&f->frame_lock);
           continue;
         }
         if (page_out(f->page)) {
+            #ifdef DEBUG_EVICT
+            printf("frame %d has been swapped out!\n", hand);
+            #endif
           ASSERT (f->page == NULL);
           result = f;
           break;
         }
+        else {
+          #ifdef DEBUG_EVICT
+            printf("frame %d has not been swapped out!\n", hand);
+            #endif  
+         }
+
         lock_release(&f->frame_lock);
       }
+      else {
+        printf("frame %d is locked!\n", hand);
+       }
+    }
+    if(result == NULL){
+        PANIC("No frame can be evicted!\n");
     }
     return result;
 }

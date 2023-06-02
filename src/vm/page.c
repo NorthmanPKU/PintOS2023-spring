@@ -262,7 +262,7 @@ bool page_out (struct sup_page_entry *p){
 //     }
 
 //   }
-    bool k = swap_out(p);
+    ok = swap_out(p);
     p->status = SWAP;
   if(ok){
     p->frame_entry->page = NULL;

@@ -11,6 +11,7 @@
 /** Number of page faults processed. */
 static long long page_fault_cnt;
 #define STACK_MAX (1 << 23)
+bool for_watch_point = 0;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
@@ -151,7 +152,7 @@ page_fault (struct intr_frame *f)
   /* Turn interrupts back on (they were only off so that we could
      be assured of reading CR2 before it changed). */
   intr_enable ();
-
+   if(fault_addr == 0x81b5000) for_watch_point = 1;
   /* Count page faults. */
   page_fault_cnt++;
 
@@ -162,8 +163,8 @@ page_fault (struct intr_frame *f)
 
   #ifdef VM
   #ifdef DEBUG
-  printf("The fault addr is %p\n", fault_addr);
    #endif
+  //printf("The fault addr is %p\n", fault_addr);
    //print all three flags
    //printf("not_present = %d, write = %d, user = %d, fault_addr = %p\n", not_present, write, user, fault_addr);
    //stack growth
