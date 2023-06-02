@@ -168,7 +168,7 @@ page_fault (struct intr_frame *f)
    //printf("not_present = %d, write = %d, user = %d, fault_addr = %p\n", not_present, write, user, fault_addr);
    //stack growth
    void* esp = user ? f->esp : thread_current()->current_esp;
-   bool on_stack_frame = (f->esp <= fault_addr || fault_addr == f->esp - 4 || fault_addr == f->esp - 32);
+   bool on_stack_frame = (esp <= fault_addr || fault_addr == esp - 4 || fault_addr == esp - 32);
    bool ok_stack_addr = (fault_addr >= PHYS_BASE - STACK_MAX)&& (fault_addr < PHYS_BASE);
    void* fault_page = pg_round_down(fault_addr);
    if(on_stack_frame && ok_stack_addr){
